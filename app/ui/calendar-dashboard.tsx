@@ -1,10 +1,12 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { NotificationsButton } from "./notifications-button";
+import { SignOutButton } from "./sign-out-button";
 import { useRouter } from "next/navigation";
 import {
   formatLeagueDate,
-  formatZonedDateTime,
   wallClockToDate,
 } from "@/lib/timezone-format";
 import {
@@ -79,7 +81,8 @@ function weekKey(date: Date) {
 function buildWeeks(season: Season): Week[] {
   const weeks = new Map<string, Week>();
   const sessionIds = new Set(season.sessions.map((session) => session.id));
-  for (const game of season.games) {
+  const rangedGames = season.games.filter((game) => sessionIds.has(game.sessionId));
+  for (const game of rangedGames) {
     const start = startOfWeek(parseDate(game.gameDate));
     const key = weekKey(start);
     let week = weeks.get(key);
@@ -102,11 +105,16 @@ function buildWeeks(season: Season): Week[] {
       );
     }
   }
-  return [...weeks.values()]
-    .filter((week) => [...week.gamesByDay.values()].some((games) =>
-      games.some((game) => sessionIds.has(game.sessionId)),
-    ))
-    .sort((left, right) => left.key.localeCompare(right.key));
+  if (!rangedGames.length) return [];
+  const sortedDates = rangedGames.map((game) => parseDate(game.gameDate).getTime()).sort((left, right) => left - right);
+  const first = startOfWeek(new Date(sortedDates[0]));
+  const last = startOfWeek(new Date(sortedDates[sortedDates.length - 1]));
+  const complete: Week[] = [];
+  for (let cursor = first; cursor <= last; cursor = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000)) {
+    const key = weekKey(cursor);
+    complete.push(weeks.get(key) ?? { key, gamesByDay: new Map() });
+  }
+  return complete;
 }
 
 const cardColors = {
@@ -124,16 +132,6 @@ const cardColors = {
   },
 } as const;
 
-const weekdayNames = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
 function formatCardTime(game: Game) {
   const date = wallClockToDate(game.gameDate, game.startTime, game.timezone);
   const parts = new Intl.DateTimeFormat("en", {
@@ -149,6 +147,20 @@ function formatCardTime(game: Game) {
   return `${hour}${minute && minute !== "00" ? `:${minute}` : ""}${period.toLowerCase()}`;
 }
 
+function formatPingRespondBy(ping: PendingPing) {
+  const responseAt = new Date(new Date(ping.expiresAt).getTime() - 60_000);
+  const parts = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h12",
+    timeZone: ping.timezone,
+  }).formatToParts(responseAt);
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  const period = parts.find((part) => part.type === "dayPeriod")?.value;
+  return `Respond by ${hour}:${minute ?? "00"}${period?.toUpperCase() ?? ""}`;
+}
+
 function formatMoney(amountCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -161,11 +173,17 @@ export function CalendarDashboard({
   pendingPings: initialPendingPings,
   serverNow,
   userId,
+  fullName,
+  isAdmin,
+  deepLinkGameId,
 }: {
   seasons: Season[];
   pendingPings: PendingPing[];
   serverNow: string;
   userId: string;
+  fullName: string;
+  isAdmin: boolean;
+  deepLinkGameId: string | null;
 }) {
   const router = useRouter();
   const [seasons, setSeasons] = useState(initialSeasons);
@@ -190,10 +208,13 @@ export function CalendarDashboard({
     useState<string | null>(null);
   const [busyGameId, setBusyGameId] = useState<string | null>(null);
   const [pingActionGameId, setPingActionGameId] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [, setError] = useState("");
+  const [, setMessage] = useState("");
   const calendarScrollRef = useRef<HTMLDivElement>(null);
   const autoScrollAttempted = useRef(false);
+  const gearRef = useRef<HTMLDivElement>(null);
+  const [gearOpen, setGearOpen] = useState(false);
+  const [highlightedGameId, setHighlightedGameId] = useState<string | null>(null);
 
   if (initialSeasons !== syncedSeasons) {
     setSyncedSeasons(initialSeasons);
@@ -245,18 +266,25 @@ export function CalendarDashboard({
     const first = upcomingGames[0];
     return first ? `${first.seasonId}:${first.game.id}` : null;
   }, [now, seasons]);
-  const visiblePendingPings = pendingPings.filter((ping) => {
-    const startsAt = wallClockToDate(
-      ping.gameDate,
-      ping.startTime,
-      ping.timezone,
-    ).getTime();
-    return (
-      now <
-      startsAt -
-        (ping.globalClaimHours + ping.genderMatchClaimHours) * 60 * 60 * 1000
+  const activePings = pendingPings.filter((ping) =>
+    new Date(ping.expiresAt).getTime() > now,
+  );
+  function scrollAndHighlightGame(gameId: string) {
+    const target = calendarScrollRef.current?.querySelector<HTMLElement>(
+      `[data-game-id="${CSS.escape(gameId)}"]`,
     );
-  });
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    setHighlightedGameId(gameId);
+    window.setTimeout(() => setHighlightedGameId((current) => current === gameId ? null : current), 2200);
+  }
+
+  useEffect(() => {
+    if (!deepLinkGameId) return;
+    const timer = window.setTimeout(() => scrollAndHighlightGame(deepLinkGameId), 300);
+    return () => window.clearTimeout(timer);
+  }, [deepLinkGameId, seasons]);
+
   const claimSeason = claimGame
     ? seasons.find((season) => season.id === claimGame.seasonId)
     : null;
@@ -277,6 +305,22 @@ export function CalendarDashboard({
           60 *
           1000 &&
     now < claimStartsAt;
+
+  useEffect(() => {
+    if (!gearOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!gearRef.current?.contains(event.target as Node)) setGearOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setGearOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [gearOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
@@ -767,19 +811,18 @@ export function CalendarDashboard({
       game.status !== "playing" &&
       openSlots > 0 &&
       (inGlobalClaimWindow || (inGenderClaimWindow && hasGenderMatchSlot));
-    const activePing = visiblePendingPings.find(
+    const activePing = activePings.find(
       (ping) => ping.gameId === game.id,
     );
     const needsClaimAction =
       game.status === "available" && canClaim;
-    const needsAttention = Boolean(activePing || needsClaimAction);
     const attentionPulseClass = activePing
-      ? "ring-2 ring-offset-1 ring-teal-400 motion-safe:ring-4 motion-safe:ring-offset-2 motion-safe:animate-pulse"
+      ? "ring-2 ring-offset-1 ring-yellow-400 motion-safe:ring-4 motion-safe:ring-offset-2 motion-safe:animate-pulse"
       : needsClaimAction
         ? "ring-2 ring-offset-1 ring-amber-400 motion-safe:ring-4 motion-safe:ring-offset-2 motion-safe:animate-pulse"
         : "";
     const attentionDotClass = activePing
-      ? "bg-teal-600"
+      ? "bg-yellow-500"
       : "bg-amber-500";
     const commitmentLocked = now >= genderClaimStartsAt || now >= startsAt;
     const content = (
@@ -798,8 +841,10 @@ export function CalendarDashboard({
           </span>
           <span className="text-right">{timeLabel}</span>
         </div>
-        <span className="flex flex-1 items-center justify-center py-2 text-base font-bold uppercase tracking-wide">
-          {game.status}
+        <span className="flex flex-1 items-center justify-center gap-2 py-2 text-base font-bold uppercase tracking-wide">
+          {activePing && <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full bg-yellow-500 motion-safe:animate-pulse" />}
+          <span>{game.status}</span>
+          {activePing && <span className="text-[11px] font-semibold normal-case tracking-normal">{formatPingRespondBy(activePing)}</span>}
         </span>
         <span className="text-center text-[11px] font-medium leading-tight sm:text-xs">
           need {game.fmpSlotsToFill} FMPs, {game.mmpSlotsToFill} MMPs
@@ -808,7 +853,7 @@ export function CalendarDashboard({
     );
 
     return (
-      <div className="space-y-2" key={game.id}>
+      <div className="space-y-2" data-game-id={game.id} key={game.id}>
         {game.cancelled ? (
           <div className="flex h-32 items-center justify-center rounded-lg border border-slate-300 bg-slate-200 p-3 text-sm font-bold text-slate-700">
             No game
@@ -827,7 +872,7 @@ export function CalendarDashboard({
                     ? "Open claim window. Click to claim or set unavailable."
                     : "Click to change availability."
               }`}
-              className={`relative h-32 w-full rounded-lg border p-2 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-60 ${cardColors[game.status][startsAt > now ? "future" : "past"]} ${attentionPulseClass}`}
+              className={`relative h-32 w-full rounded-lg border p-2 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-60 ${cardColors[game.status][startsAt > now ? "future" : "past"]} ${attentionPulseClass} ${highlightedGameId === game.id ? "ring-4 ring-yellow-400" : ""}`}
               disabled={
                 busy ||
                 (commitmentLocked && !activePing && !needsClaimAction)
@@ -849,9 +894,9 @@ export function CalendarDashboard({
             >
               {content}
             </button>
-            {needsAttention && (
+            {needsClaimAction && !activePing && (
               <span
-                aria-label={activePing ? "Sub ping requires response" : "Claim action required"}
+                aria-label="Claim action required"
                 className="absolute right-2 top-2 h-3 w-3 rounded-full"
                 role="status"
               >
@@ -890,40 +935,22 @@ export function CalendarDashboard({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {message && (
-        <p aria-live="polite" className="mb-5 rounded-lg bg-teal-50 p-4 text-sm text-teal-900">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p aria-live="polite" className="mb-5 rounded-lg bg-red-50 p-4 text-sm text-red-800">
-          {error}
-        </p>
-      )}
-      {visiblePendingPings.length > 0 && (
-        <section
-          aria-label="Pending substitute requests"
-          className="mb-8 rounded-xl border-2 border-teal-700 bg-teal-50 p-4 shadow-sm"
-        >
-          <h2 className="text-xl font-bold text-teal-950">You&apos;ve been pinged for a game</h2>
-          <div className="mt-2 space-y-1">
-            {visiblePendingPings.map((ping) => (
-                <p className="text-sm font-medium text-teal-950" key={ping.id}>
-                  {ping.seasonName} ·{" "}
-                  {formatLeagueDate(ping.gameDate, ping.timezone, {
-                    weekday: "long",
-                    month: "long",
-                    day: "numeric",
-                  })}{" "}
-                  · Respond before {formatZonedDateTime(ping.expiresAt, ping.timezone)}
-                </p>
-              ))}
-          </div>
-        </section>
-      )}
+    <div className="h-[100dvh] min-h-0 w-full flex flex-col overflow-hidden">
+      <header className="relative z-20 flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3">
+        <span className="font-bold text-slate-900">OnlySubs</span>
+        {seasons[0] && <span className="min-w-0 flex-1 truncate text-sm text-slate-600">{seasons[0].name}</span>}
+        <div ref={gearRef} className="relative">
+          <button aria-expanded={gearOpen} aria-label="Open menu" className="flex h-9 w-9 items-center justify-center border border-slate-300 text-lg" onClick={() => setGearOpen((open) => !open)} type="button">&#9881;</button>
+          {gearOpen && <div className="absolute right-0 top-10 w-56 border border-slate-300 bg-white p-2 shadow-lg">
+            {seasons.filter((season) => season.rulesPdfUrl).map((season) => <a key={season.id} className="block px-2 py-2 hover:bg-slate-50" href={season.rulesPdfUrl ?? undefined} rel="noopener noreferrer" target="_blank">Rules - {season.name}</a>)}
+            {isAdmin && <Link className="block px-2 py-2 hover:bg-slate-50" href="/admin">Admin</Link>}
+            <NotificationsButton compact />
+            <SignOutButton compact />
+          </div>}
+        </div>
+      </header>
       <div
-        className="mt-4 min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white"
         ref={calendarScrollRef}
       >
       {seasons.map((season) => {
@@ -960,53 +987,13 @@ export function CalendarDashboard({
           ? weekKey(startOfWeek(parseDate(upcomingGame.gameDate)))
           : null;
         return (
-          <section className="mt-8" key={season.id}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-2xl font-semibold text-slate-900">{season.name}</h2>
-              {season.rulesPdfUrl && (
-                <a
-                  className="inline-flex items-center gap-2 rounded-lg border border-teal-700 px-3 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50"
-                  href={season.rulesPdfUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      d="M7 3.75h7l4.25 4.5v12A.75.75 0 0 1 17.5 21h-10a.75.75 0 0 1-.75-.75v-16A.5.5 0 0 1 7 3.75Z"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path d="M14 4v5h4M8.5 14h7m-7 3h7" strokeLinecap="round" />
-                  </svg>
-                  Rules
-                </a>
-              )}
-            </div>
+          <section key={season.id}>
             {weeks.length === 0 ? (
               <p className="m-4 rounded-lg bg-slate-50 p-5 text-slate-600">
                 No game dates have been added yet.
               </p>
             ) : (
-                <table className="w-full min-w-[720px] table-fixed border-separate border-spacing-0 text-left">
-                  <thead>
-                    <tr>
-                      {dayColumns.map((weekday) => (
-                        <th
-                          className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 p-3 text-center text-sm font-semibold text-slate-700"
-                          key={weekday}
-                        >
-                          {weekdayNames[weekday]}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
+                <table className="w-full table-fixed border-separate border-spacing-0 px-2 text-left">
                   <tbody>
                     {weeks.map((week) => (
                       <Fragment key={`${season.id}-${week.key}`}>
@@ -1028,7 +1015,22 @@ export function CalendarDashboard({
                                   <div className="space-y-2">
                                     {games.map((game) => renderGame(season.id, game))}
                                   </div>
-                                ) : null}
+                                ) : (
+                                  (() => {
+                                    const noGameDate = new Date(parseDate(week.key).getTime() + weekday * 24 * 60 * 60 * 1000);
+                                    const noGameKey = noGameDate.toISOString().slice(0, 10);
+                                    return (
+                                      <div className="flex h-32 flex-col rounded-lg border border-slate-200 bg-slate-100 p-2 text-slate-500">
+                                        <div className="grid grid-cols-3 items-center gap-1 text-xs font-semibold">
+                                          <span className="text-left">{formatLeagueDate(noGameKey, "UTC", { month: "short", day: "numeric" }).replace(" ", "")}</span>
+                                          <span className="text-center">{formatLeagueDate(noGameKey, "UTC", { weekday: "long" })}</span>
+                                          <span />
+                                        </div>
+                                        <span className="flex flex-1 items-center justify-center text-sm font-bold">No game</span>
+                                      </div>
+                                    );
+                                  })()
+                                )}
                               </td>
                             );
                           })}
@@ -1054,6 +1056,23 @@ export function CalendarDashboard({
         );
       })}
       </div>
+
+      <footer className="flex h-12 shrink-0 items-center border-t border-slate-200 bg-white px-3">
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{fullName}</span>
+        <button
+          className="h-9 border border-slate-300 px-3 disabled:text-slate-400"
+          disabled={activePings.length === 0}
+          onClick={() => {
+            const soonest = [...activePings].sort((left, right) =>
+              new Date(left.expiresAt).getTime() - new Date(right.expiresAt).getTime(),
+            )[0];
+            if (soonest) scrollAndHighlightGame(soonest.gameId);
+          }}
+          type="button"
+        >
+          {activePings.length} active ping{activePings.length === 1 ? "" : "s"}
+        </button>
+      </footer>
 
       {confirmGame && (
         <div

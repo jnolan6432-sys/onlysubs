@@ -60,7 +60,13 @@ self.addEventListener("notificationclick", (event) => {
               ok: response.ok,
               result,
             });
-            if (response.ok) await client.focus();
+          }
+          if (response.ok && windows.length) {
+            const existing = windows.find((client) => client.url.startsWith(self.location.origin));
+            if (existing) {
+              await existing.navigate(target.href);
+              await existing.focus();
+            }
           }
           if (!windows.length || !response.ok) {
             await self.clients.openWindow(target.href);

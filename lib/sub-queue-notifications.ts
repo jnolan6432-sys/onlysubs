@@ -185,28 +185,6 @@ export async function dispatchSubQueueEvents(
           if (markError) errors.push(`Could not record ping delivery: ${markError.message}`);
         }
       } else if (event.event === "exhausted" && recipient) {
-        if (event.push_needed !== false) {
-          const push = await sendPush(serviceClient, recipient, {
-            title: "Sub request exhausted",
-            body: `No sub was found for ${event.game_date ?? "a game"} in ${
-              event.season_name ?? "your season"
-            }.`,
-            url: "/",
-          });
-          pushSent = push.sent;
-          if (push.error) errors.push(push.error);
-          const { error: markError } = await serviceClient.rpc(
-            "mark_sub_queue_notification",
-            {
-              p_request_id: event.request_id,
-              p_recipient_user_id: recipient,
-              p_event_type: "exhausted_push",
-              p_delivered: push.handled,
-            },
-          );
-          if (markError) errors.push(`Could not record admin push delivery: ${markError.message}`);
-        }
-
         if (event.email_needed !== false) {
           const email = await sendAdminEmail(serviceClient, recipient, event);
           emailSent = email.sent;
@@ -223,13 +201,7 @@ export async function dispatchSubQueueEvents(
           if (markError) errors.push(`Could not record admin email delivery: ${markError.message}`);
         }
       } else if (event.event === "filled" && recipient) {
-        const push = await sendPush(serviceClient, recipient, {
-          title: "Sub found",
-          body: "A player accepted your substitute request.",
-          url: "/",
-        });
-        pushSent = push.sent;
-        if (push.error) errors.push(push.error);
+        pushSent = 0;
       }
     } catch (caught) {
       errors.push(

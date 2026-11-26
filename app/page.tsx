@@ -1,7 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import { AuthForm } from "./ui/auth-form";
-import { NotificationsButton } from "./ui/notifications-button";
-import { SignOutButton } from "./ui/sign-out-button";
 import { CalendarDashboard } from "./ui/calendar-dashboard";
 import { createServiceClient } from "@/lib/admin";
 import { wallClockToDate } from "@/lib/timezone-format";
@@ -14,9 +12,9 @@ import { calculateSeasonSettlements } from "@/lib/season-settlements";
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ authError?: string }>;
+  searchParams: Promise<{ authError?: string; game?: string }>;
 }) {
-  const { authError } = await searchParams;
+  const { authError, game: deepLinkGameId } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,7 +22,7 @@ export default async function Home({
   const { data: profile, error: profileError } = user
     ? await supabase
         .from("profiles")
-      .select("is_admin, gender_match")
+      .select("is_admin, gender_match, full_name")
         .eq("id", user.id)
         .maybeSingle()
     : { data: null, error: null };
@@ -400,39 +398,24 @@ export default async function Home({
     <main
       className={
         user
-          ? "mx-auto h-dvh max-w-5xl overflow-hidden px-5 py-3"
-          : "flex min-h-screen items-center justify-center px-5 py-12"
+          ? "h-[100dvh] min-h-0 overflow-hidden bg-white"
+          : "flex min-h-[100dvh] items-center justify-center px-5 py-12"
       }
     >
       <section
         className={
           user
-            ? "flex h-full w-full flex-col overflow-hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:p-7"
+            ? "h-full min-h-0 w-full overflow-hidden"
             : "w-full max-w-lg rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200 sm:p-10"
         }
       >
-        <p className="shrink-0 text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-          OnlySubs
-        </p>
         {authError && (
           <p aria-live="polite" className="mt-4 text-sm text-red-700">
             That sign-in link is invalid or expired. Request a new one.
           </p>
         )}
         {user ? (
-          <div className="mt-5 flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-wrap items-start justify-between gap-5">
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight">
-                  Your calendar
-                </h1>
-                <p className="mt-2 break-all text-sm text-slate-600">{user.email}</p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-              <NotificationsButton />
-              <SignOutButton />
-              </div>
-            </div>
+          <div className="h-full min-h-0">
             {calendar.length === 0 ? (
               <p className="mt-8 rounded-lg bg-slate-50 p-5 text-slate-600">
                 You haven&apos;t been added to a season yet. Your game calendar
@@ -444,6 +427,9 @@ export default async function Home({
                 pendingPings={pendingPings}
                 serverNow={new Date().toISOString()}
                 userId={user.id}
+                fullName={profile?.full_name?.trim() || user.email || "Player"}
+                isAdmin={profile?.is_admin === true}
+                deepLinkGameId={deepLinkGameId ?? null}
               />
             )}
           </div>

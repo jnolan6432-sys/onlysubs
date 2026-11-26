@@ -9,7 +9,7 @@ function decodeVapidKey(value: string) {
   return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }
 
-export function NotificationsButton() {
+export function NotificationsButton({ compact = false }: { compact?: boolean }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -88,7 +88,7 @@ export function NotificationsButton() {
   return (
     <div>
       <button
-        className="rounded-lg bg-teal-800 px-4 py-3 font-semibold text-white hover:bg-teal-900 disabled:cursor-wait disabled:opacity-60"
+        className={compact ? "block w-full px-2 py-2 text-left hover:bg-slate-50 disabled:opacity-50" : "rounded-lg bg-teal-800 px-4 py-3 font-semibold text-white hover:bg-teal-900 disabled:cursor-wait disabled:opacity-60"}
         disabled={busy}
         onClick={enableNotifications}
         type="button"

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export function SignOutButton() {
+export function SignOutButton({ compact = false }: { compact?: boolean }) {
   const [error, setError] = useState("");
   const router = useRouter();
 
@@ -20,7 +20,7 @@ export function SignOutButton() {
   return (
     <div>
       <button
-        className="rounded-lg border border-slate-300 px-4 py-3 font-medium text-slate-700 hover:bg-slate-50"
+        className={compact ? "block w-full px-2 py-2 text-left hover:bg-slate-50" : "rounded-lg border border-slate-300 px-4 py-3 font-medium text-slate-700 hover:bg-slate-50"}
         onClick={signOut}
         type="button"
       >

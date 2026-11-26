@@ -100,6 +100,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
   const [globalClaim, setGlobalClaim] = useState(Number(initialData?.season.global_claim_hours ?? 2));
   const [genderClaim, setGenderClaim] = useState(Number(initialData?.season.gender_match_claim_hours ?? 1));
   const [claimsFree, setClaimsFree] = useState(initialData?.season.claims_are_free ?? true);
+  const [confirmAction, setConfirmAction] = useState<"delete" | "reset" | null>(null);
 
   function updateSession(index: number, patch: Partial<SessionDraft>) {
     setSessions((current) => current.map((session, sessionIndex) => sessionIndex === index ? { ...session, ...patch } : session));
@@ -211,13 +212,13 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
   }
 
   async function deleteSeason() {
-    if (!seasonId || !window.confirm("Delete this season and all associated schedules and commitments?")) return;
+    if (!seasonId) return;
     const response = await fetch(`/api/admin/seasons/${seasonId}`, { method: "DELETE" });
     if (response.ok) router.push("/admin"); else setError((await response.json()).error || "Could not delete the season.");
   }
 
   async function resetStats() {
-    if (!seasonId || !window.confirm("Reset responsiveness scores for every player in this season?")) return;
+    if (!seasonId) return;
     const response = await fetch(`/api/admin/seasons/${seasonId}/reset-stats`, { method: "POST" });
     const result = await response.json();
     if (!response.ok) setError(result.error || "Could not reset scores."); else setStatus("Responsiveness scores reset");
@@ -276,10 +277,11 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
             <div className="mb-3 flex items-center gap-3"><label>Rules PDF<input className="ml-2" type="file" accept="application/pdf" onChange={(event) => setRulesPdfFile(event.target.files?.[0] ?? null)} /></label>{initialData?.season.rules_pdf_url && <button className="border border-slate-300 px-2 py-1" type="button" onClick={() => setRemoveRulesPdf(true)}>Remove</button>}<a className="underline" href={initialData?.season.rules_pdf_url ?? undefined} target="_blank">{initialData?.season.rules_pdf_name ?? ""}</a></div>
             <button className="border border-slate-300 px-2 py-1" type="button" onClick={() => setAdvancedOpen((open) => !open)}>Advanced settings {advancedOpen ? "[-]" : "[+]"}</button>
             {advancedOpen && <div className="mt-3 grid grid-cols-4 gap-3"><label>Timeout hours<input className="block h-8 w-full border px-2" type="number" min={1} max={168} value={timeoutHours} onChange={(e) => setTimeoutHours(Number(e.target.value))} /></label><label>Day start<input className="block h-8 w-full border px-2" type="number" min={0} max={23} value={dayStart} onChange={(e) => setDayStart(Number(e.target.value))} /></label><label>Day end<input className="block h-8 w-full border px-2" type="number" min={0} max={23} value={dayEnd} onChange={(e) => setDayEnd(Number(e.target.value))} /></label><label>Timezone<input className="block h-8 w-full border px-2" value={timezone} onChange={(e) => setTimezone(e.target.value)} /></label><label>Game price<input className="block h-8 w-full border px-2" value={gamePrice} onChange={(e) => setGamePrice(e.target.value)} /></label><label>Global claim hours<input className="block h-8 w-full border px-2" type="number" value={globalClaim} onChange={(e) => setGlobalClaim(Number(e.target.value))} /></label><label>Gender claim hours<input className="block h-8 w-full border px-2" type="number" value={genderClaim} onChange={(e) => setGenderClaim(Number(e.target.value))} /></label><label>Claims free<select className="block h-8 w-full border px-2" value={claimsFree ? "yes" : "no"} onChange={(e) => setClaimsFree(e.target.value === "yes")}><option value="yes">Yes</option><option value="no">No</option></select></label></div>}
-            <div className="mt-4 flex gap-2"><button className="border border-slate-400 px-2 py-1" disabled={!seasonId} type="button" onClick={resetStats}>Reset responsiveness score</button><button className="border border-red-500 px-2 py-1 text-red-700" disabled={!seasonId} type="button" onClick={deleteSeason}>Delete season</button></div>
+            <div className="mt-4 flex gap-2"><button className="border border-slate-400 px-2 py-1" disabled={!seasonId} type="button" onClick={() => setConfirmAction("reset")}>Reset responsiveness score</button><button className="border border-red-500 px-2 py-1 text-red-700" disabled={!seasonId} type="button" onClick={() => setConfirmAction("delete")}>Delete season</button></div>
           </div>}
         </section>
       </div>
+      {confirmAction && <div aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog"><div className="w-full max-w-md border border-slate-400 bg-white p-4"><h2 className="font-bold">{confirmAction === "delete" ? "Delete season?" : "Reset responsiveness score?"}</h2><p className="mt-2 text-sm">{confirmAction === "delete" ? "This permanently removes the season and associated data." : "This resets all player ping scores in this season."}</p><div className="mt-4 flex justify-end gap-2"><button className="border border-slate-300 px-3 py-1" type="button" onClick={() => setConfirmAction(null)}>Cancel</button><button className="border border-red-600 px-3 py-1 text-red-700" type="button" onClick={() => { setConfirmAction(null); if (confirmAction === "delete") void deleteSeason(); else void resetStats(); }}>Confirm</button></div></div></div>}
     </main>
   );
 }
