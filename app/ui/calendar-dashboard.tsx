@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { NotificationsButton } from "./notifications-button";
 import { SignOutButton } from "./sign-out-button";
@@ -161,6 +161,20 @@ function formatPingRespondBy(ping: PendingPing) {
   return `Respond by ${hour}:${minute ?? "00"}${period?.toUpperCase() ?? ""}`;
 }
 
+function formatPingGameTime(ping: PendingPing) {
+  const date = wallClockToDate(ping.gameDate, ping.startTime, ping.timezone);
+  const parts = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h12",
+    timeZone: ping.timezone,
+  }).formatToParts(date);
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+  const period = parts.find((part) => part.type === "dayPeriod")?.value;
+  return `${hour}${minute && minute !== "00" ? `:${minute}` : ""}${period?.toLowerCase() ?? ""}`;
+}
+
 function formatMoney(amountCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -207,7 +221,7 @@ export function CalendarDashboard({
   const [busySettlementSeasonId, setBusySettlementSeasonId] =
     useState<string | null>(null);
   const [busyGameId, setBusyGameId] = useState<string | null>(null);
-  const [pingActionGameId, setPingActionGameId] = useState<string | null>(null);
+  const [pingModal, setPingModal] = useState<PendingPing | null>(null);
   const [, setError] = useState("");
   const [, setMessage] = useState("");
   const calendarScrollRef = useRef<HTMLDivElement>(null);
@@ -269,7 +283,7 @@ export function CalendarDashboard({
   const activePings = pendingPings.filter((ping) =>
     new Date(ping.expiresAt).getTime() > now,
   );
-  function scrollAndHighlightGame(gameId: string) {
+  const scrollAndHighlightGame = useCallback((gameId: string, openPing = false) => {
     const target = calendarScrollRef.current?.querySelector<HTMLElement>(
       `[data-game-id="${CSS.escape(gameId)}"]`,
     );
@@ -277,13 +291,17 @@ export function CalendarDashboard({
     target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     setHighlightedGameId(gameId);
     window.setTimeout(() => setHighlightedGameId((current) => current === gameId ? null : current), 2200);
-  }
+    if (openPing) {
+      const ping = activePings.find((item) => item.gameId === gameId);
+      if (ping) window.setTimeout(() => setPingModal(ping), 350);
+    }
+  }, [activePings]);
 
   useEffect(() => {
     if (!deepLinkGameId) return;
-    const timer = window.setTimeout(() => scrollAndHighlightGame(deepLinkGameId), 300);
+    const timer = window.setTimeout(() => scrollAndHighlightGame(deepLinkGameId, true), 300);
     return () => window.clearTimeout(timer);
-  }, [deepLinkGameId, seasons]);
+  }, [deepLinkGameId, seasons, scrollAndHighlightGame]);
 
   const claimSeason = claimGame
     ? seasons.find((season) => season.id === claimGame.seasonId)
@@ -460,7 +478,7 @@ export function CalendarDashboard({
       setPendingPings((current) =>
         current.filter((ping) => ping.id !== requestId),
       );
-      setPingActionGameId(null);
+      setPingModal(null);
       const notificationFailure = result.notificationError ||
         result.notifications?.find(
           (item: { error?: string }) => item.error,
@@ -879,9 +897,7 @@ export function CalendarDashboard({
               }
               onClick={() => {
                 if (activePing) {
-                  setPingActionGameId((current) =>
-                    current === game.id ? null : game.id,
-                  );
+                  setPingModal(activePing);
                 } else if (needsClaimAction) {
                   setClaimGame({ seasonId, game });
                 } else if (game.status === "playing") {
@@ -907,26 +923,6 @@ export function CalendarDashboard({
                   className={`relative inline-flex h-3 w-3 rounded-full ${attentionDotClass}`}
                 />
               </span>
-            )}
-            {activePing && pingActionGameId === game.id && (
-              <div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-teal-200 bg-teal-50 p-2">
-                <button
-                  className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800"
-                  disabled={busy}
-                  onClick={() => respondToPing(activePing.id, "accept")}
-                  type="button"
-                >
-                  Accept Spot
-                </button>
-                <button
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  disabled={busy}
-                  onClick={() => respondToPing(activePing.id, "pass")}
-                  type="button"
-                >
-                  Pass
-                </button>
-              </div>
             )}
           </div>
         )}
@@ -1066,7 +1062,7 @@ export function CalendarDashboard({
             const soonest = [...activePings].sort((left, right) =>
               new Date(left.expiresAt).getTime() - new Date(right.expiresAt).getTime(),
             )[0];
-            if (soonest) scrollAndHighlightGame(soonest.gameId);
+            if (soonest) scrollAndHighlightGame(soonest.gameId, true);
           }}
           type="button"
         >
@@ -1074,6 +1070,58 @@ export function CalendarDashboard({
         </button>
       </footer>
 
+      {pingModal && (
+        <div
+          aria-labelledby="active-ping-title"
+          aria-modal="true"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/50 p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPingModal(null);
+          }}
+          role="dialog"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-slate-900" id="active-ping-title">
+              Respond to sub ping
+            </h2>
+            <p className="mt-3 leading-6 text-slate-700">
+              {formatLeagueDate(pingModal.gameDate, pingModal.timezone, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })} at {formatPingGameTime(pingModal)}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-yellow-800">
+              {formatPingRespondBy(pingModal)}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="rounded-lg border border-slate-300 px-4 py-2.5 font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setPingModal(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50"
+                disabled={busyGameId === pingModal.gameId}
+                onClick={() => respondToPing(pingModal.id, "pass")}
+                type="button"
+              >
+                Pass
+              </button>
+              <button
+                className="rounded-lg bg-green-700 px-4 py-2.5 font-semibold text-white hover:bg-green-800 disabled:opacity-60"
+                disabled={busyGameId === pingModal.gameId}
+                onClick={() => respondToPing(pingModal.id, "accept")}
+                type="button"
+              >
+                Accept Spot
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmGame && (
         <div
           aria-labelledby="sub-request-title"
