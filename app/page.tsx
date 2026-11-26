@@ -3,7 +3,6 @@ import { AuthForm } from "./ui/auth-form";
 import { NotificationsButton } from "./ui/notifications-button";
 import { SignOutButton } from "./ui/sign-out-button";
 import { CalendarDashboard } from "./ui/calendar-dashboard";
-import { AdminDropdown } from "@/app/admin/ui/admin-dropdown";
 import { createServiceClient } from "@/lib/admin";
 import { wallClockToDate } from "@/lib/timezone-format";
 import type {
@@ -405,11 +404,6 @@ export default async function Home({
           : "flex min-h-screen items-center justify-center px-5 py-12"
       }
     >
-      {user && profile?.is_admin && (
-        <div className="absolute right-5 top-5">
-          <AdminDropdown />
-        </div>
-      )}
       <section
         className={
           user

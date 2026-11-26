@@ -44,8 +44,8 @@ function parsePlayer(value: unknown, label: string): PlayerInput {
   const name = typeof value.name === "string" ? value.name.trim() : "";
   const email =
     typeof value.email === "string" ? value.email.trim().toLowerCase() : "";
-  if (!name || name.length > 120 || !emailPattern.test(email) || email.length > 320) {
-    throw new Error(`${label} needs a valid name and email address.`);
+  if (name.length > 120 || !emailPattern.test(email) || email.length > 320) {
+    throw new Error(`${label} needs a valid email address.`);
   }
   const gender = value.gender;
   if (gender !== "FMP" && gender !== "MMP") {
