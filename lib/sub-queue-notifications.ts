@@ -164,7 +164,7 @@ export async function dispatchSubQueueEvents(
             body: `${event.season_name ?? "A game"} needs a sub for ${
               event.game_date ?? "an upcoming date"
             } at ${event.start_time?.slice(0, 5) ?? "the scheduled time"}.`,
-            url: "/",
+            url: event.game_id ? `/?game=${event.game_id}` : "/",
             requestId: event.request_id,
             actions: [
               { action: "accept", title: "Accept Spot" },
