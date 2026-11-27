@@ -396,16 +396,17 @@ export default async function Home({
 
   return (
     <main
+      data-player-page={user ? "true" : undefined}
       className={
         user
-          ? "h-[100dvh] min-h-0 overflow-hidden bg-white"
+          ? "fixed inset-0 flex flex-col overflow-hidden bg-white"
           : "flex min-h-[100dvh] items-center justify-center px-5 py-12"
       }
     >
       <section
         className={
           user
-            ? "h-full min-h-0 w-full overflow-hidden"
+            ? "flex h-full min-h-0 w-full flex-col overflow-hidden"
             : "w-full max-w-lg rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200 sm:p-10"
         }
       >
@@ -415,7 +416,7 @@ export default async function Home({
           </p>
         )}
         {user ? (
-          <div className="h-full min-h-0">
+          <div className="flex min-h-0 flex-1 flex-col">
             {calendar.length === 0 ? (
               <p className="mt-8 rounded-lg bg-slate-50 p-5 text-slate-600">
                 You haven&apos;t been added to a season yet. Your game calendar

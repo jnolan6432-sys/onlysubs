@@ -16,7 +16,56 @@ body {
   min-height: 100vh;
 }
 
+html:has([data-player-page="true"]),
+body:has([data-player-page="true"]) {
+  overscroll-behavior: none;
+}
+
 button,
 input {
   font: inherit;
+}
+
+.calendar-day-label {
+  container-type: inline-size;
+}
+
+.calendar-day-short {
+  display: none;
+}
+
+.calendar-day-long {
+  display: inline;
+}
+
+ .calendar-card-date-compact,
+ .calendar-card-time-compact,
+ .calendar-card-ping-compact {
+  display: none;
+}
+
+@container (max-width: 96px) {
+  .calendar-card-date-full,
+  .calendar-card-time-full,
+  .calendar-card-ping-full,
+  .calendar-day-long {
+    display: none;
+  }
+
+  .calendar-card-date-compact,
+  .calendar-card-time-compact,
+  .calendar-card-ping-compact,
+  .calendar-day-short {
+    display: inline;
+  }
+}
+
+@container (min-width: 97px) {
+  .calendar-day-short {
+    display: none;
+  }
+
+  .calendar-day-long {
+    display: inline;
+  }
 }

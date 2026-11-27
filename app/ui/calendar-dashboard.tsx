@@ -78,6 +78,16 @@ function weekKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+const weekdayNames = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 function buildWeeks(season: Season): Week[] {
   const weeks = new Map<string, Week>();
   const sessionIds = new Set(season.sessions.map((session) => session.id));
@@ -147,6 +157,11 @@ function formatCardTime(game: Game) {
   const period = parts.find((part) => part.type === "dayPeriod")?.value;
   if (!hour || !period) return "";
   return `${hour}${minute && minute !== "00" ? `:${minute}` : ""}${period.toLowerCase()}`;
+}
+
+function formatCompactCardDate(value: string) {
+  const [, month, day] = value.split("-");
+  return `${month}/${day}`;
 }
 
 function formatPingRespondBy(ping: PendingPing) {
@@ -263,6 +278,15 @@ export function CalendarDashboard({
     () => new Map(seasons.map((season) => [season.id, buildWeeks(season)])),
     [seasons],
   );
+  const dayColumns = useMemo(
+    () => [...new Set(seasons.flatMap((season) => {
+      const sessionIds = new Set(season.sessions.map((session) => session.id));
+      return season.games
+        .filter((game) => sessionIds.has(game.sessionId) && !game.cancelled)
+        .map((game) => parseDate(game.gameDate).getUTCDay());
+    }))].sort((left, right) => left - right),
+    [seasons],
+  );
   const nextGameId = useMemo(() => {
     const upcomingGames = seasons.flatMap((season) =>
       season.games
@@ -285,7 +309,7 @@ export function CalendarDashboard({
   const activePings = pendingPings.filter((ping) =>
     new Date(ping.expiresAt).getTime() > now,
   );
-  const scrollAndHighlightGame = useCallback((gameId: string, openPing = false) => {
+  const scrollAndHighlightGame = useCallback((gameId: string) => {
     const target = calendarScrollRef.current?.querySelector<HTMLElement>(
       `[data-game-id="${CSS.escape(gameId)}"]`,
     );
@@ -293,15 +317,11 @@ export function CalendarDashboard({
     target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     setHighlightedGameId(gameId);
     window.setTimeout(() => setHighlightedGameId((current) => current === gameId ? null : current), 2200);
-    if (openPing) {
-      const ping = activePings.find((item) => item.gameId === gameId);
-      if (ping) window.setTimeout(() => setPingModal(ping), 350);
-    }
-  }, [activePings]);
+  }, []);
 
   useEffect(() => {
     if (!deepLinkGameId) return;
-    const timer = window.setTimeout(() => scrollAndHighlightGame(deepLinkGameId, true), 300);
+    const timer = window.setTimeout(() => scrollAndHighlightGame(deepLinkGameId), 300);
     return () => window.clearTimeout(timer);
   }, [deepLinkGameId, seasons, scrollAndHighlightGame]);
 
@@ -841,42 +861,50 @@ export function CalendarDashboard({
       : needsClaimAction
         ? "ring-2 ring-offset-1 ring-amber-400 motion-safe:ring-4 motion-safe:ring-offset-2 motion-safe:animate-pulse"
         : "";
-    const attentionDotClass = activePing
-      ? "bg-yellow-500"
-      : "bg-amber-500";
+    const attentionDotClass = "bg-amber-500";
     const commitmentLocked = now >= genderClaimStartsAt || now >= startsAt;
+    const needsText = [
+      game.fmpSlotsToFill > 0
+        ? `${game.fmpSlotsToFill} FMP${game.fmpSlotsToFill === 1 ? "" : "s"}`
+        : "",
+      game.mmpSlotsToFill > 0
+        ? `${game.mmpSlotsToFill} MMP${game.mmpSlotsToFill === 1 ? "" : "s"}`
+        : "",
+    ].filter(Boolean).join(", ");
+    const bottomText = activePing ? formatPingRespondBy(activePing) : needsText ? `need ${needsText}` : "";
+    const compactPingText = activePing
+      ? formatPingRespondBy(activePing)
+          .replace(/^Respond /, "")
+          .replace(/([AP])M$/, (_match, period: string) => period.toLowerCase())
+      : "";
     const content = (
-      <div className="flex min-h-28 flex-col">
-        <div className="grid grid-cols-3 items-center gap-1 text-xs font-semibold sm:text-sm">
-          <span className="text-left">
+      <div className="flex h-full min-w-0 flex-col overflow-hidden">
+        <div className="flex min-w-0 shrink-0 items-baseline justify-between gap-1 whitespace-nowrap pr-1 text-[clamp(11px,11cqi,14px)] font-semibold leading-tight">
+          <span className="calendar-card-date-full min-w-0 truncate text-left">
             {formatLeagueDate(game.gameDate, game.timezone, {
               month: "short",
               day: "numeric",
-            }).replace(" ", "")}
-          </span>
-          <span className="text-center">
-            {formatLeagueDate(game.gameDate, game.timezone, {
-              weekday: "long",
             })}
           </span>
-          <span className="text-right">{timeLabel}</span>
+          <span className="calendar-card-date-compact shrink-0 text-left">{formatCompactCardDate(game.gameDate)}</span>
+          <span className={`calendar-card-time-full shrink-0 text-right ${activePing ? "pr-2" : ""}`}>{timeLabel}</span>
+          <span className={`calendar-card-time-compact shrink-0 text-right ${activePing ? "pr-2" : ""}`}>{timeLabel.replace(/m$/, "")}</span>
         </div>
-        <span className="flex flex-1 items-center justify-center gap-2 py-2 text-base font-bold uppercase tracking-wide">
-          {activePing && <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full bg-yellow-500 motion-safe:animate-pulse" />}
-          <span>{game.status}</span>
-          {activePing && <span className="text-[11px] font-semibold normal-case tracking-normal">{formatPingRespondBy(activePing)}</span>}
-        </span>
-        <span className="text-center text-[11px] font-medium leading-tight sm:text-xs">
-          need {game.fmpSlotsToFill} FMPs, {game.mmpSlotsToFill} MMPs
+        <span className="flex min-h-0 min-w-0 flex-1 items-center justify-center truncate whitespace-nowrap text-center text-[clamp(13px,14cqi,22px)] font-bold uppercase leading-none tracking-tight">{game.status}</span>
+        <span className="flex min-h-[1.25em] min-w-0 shrink-0 items-end justify-center truncate whitespace-nowrap text-center text-[clamp(10px,9.5cqi,13px)] font-medium leading-tight">
+          {activePing ? <><span className="calendar-card-ping-full">{bottomText}</span><span className="calendar-card-ping-compact">{compactPingText}</span></> : bottomText}
         </span>
       </div>
     );
 
     return (
-      <div className="space-y-2" data-game-id={game.id} key={game.id}>
+      <div className="space-y-2 [container-type:inline-size]" data-game-id={game.id} key={game.id}>
         {game.cancelled ? (
-          <div className="flex h-32 items-center justify-center rounded-lg border border-slate-300 bg-slate-200 p-3 text-sm font-bold text-slate-700">
-            No game
+          <div className="flex aspect-[1/0.85] min-h-[84px] w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-slate-200 p-2 text-slate-600 [container-type:inline-size]">
+            <span className="calendar-card-date-full shrink-0 truncate whitespace-nowrap text-[clamp(11px,11cqi,14px)] font-semibold leading-tight">{formatLeagueDate(game.gameDate, game.timezone, { month: "short", day: "numeric" })}</span>
+            <span className="calendar-card-date-compact shrink-0 whitespace-nowrap text-[clamp(11px,11cqi,14px)] font-semibold leading-tight">{formatCompactCardDate(game.gameDate)}</span>
+            <span className="flex min-h-0 flex-1 items-center justify-center truncate whitespace-nowrap text-[clamp(11px,10cqi,14px)] font-semibold leading-none">No game</span>
+            <span aria-hidden="true" className="min-h-[1.25em] shrink-0" />
           </div>
         ) : (
           <div className="relative">
@@ -887,12 +915,12 @@ export function CalendarDashboard({
                 day: "numeric",
               })}, ${game.status}, ${game.fmpSlotsToFill} FMPs and ${game.mmpSlotsToFill} MMPs needed. ${
                 activePing
-                  ? "Active sub ping. Click to accept or pass."
+                  ? "Active sub ping. Click to respond."
                   : needsClaimAction
                     ? "Open claim window. Click to claim or set unavailable."
                     : "Click to change availability."
               }`}
-              className={`relative h-32 w-full rounded-lg border p-2 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-60 ${cardColors[game.status][startsAt > now ? "future" : "past"]} ${attentionPulseClass} ${highlightedGameId === game.id ? "ring-4 ring-yellow-400" : ""}`}
+              className={`relative flex aspect-[1/0.85] min-h-[84px] w-full min-w-0 flex-col overflow-hidden rounded-lg border p-2 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-60 ${cardColors[game.status][startsAt > now ? "future" : "past"]} ${attentionPulseClass} ${highlightedGameId === game.id ? "ring-4 ring-yellow-400" : ""}`}
               disabled={
                 busy ||
                 (commitmentLocked && !activePing && !needsClaimAction)
@@ -912,6 +940,7 @@ export function CalendarDashboard({
             >
               {content}
             </button>
+            {activePing && <span aria-label="Active sub ping" className="absolute right-1 top-1 z-10 h-1.5 w-1.5 rounded-full bg-yellow-500 motion-safe:animate-pulse" role="status" />}
             {needsClaimAction && !activePing && (
               <span
                 aria-label="Claim action required"
@@ -933,8 +962,8 @@ export function CalendarDashboard({
   }
 
   return (
-    <div className="h-[100dvh] min-h-0 w-full flex flex-col overflow-hidden">
-      <header className="relative z-20 flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <header className="relative z-20 flex min-h-12 shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3" style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
         <span className="font-bold text-slate-900">OnlySubs</span>
         {seasons[0] && <span className="min-w-0 flex-1 truncate text-sm text-slate-600">{seasons[0].name}</span>}
         <div ref={gearRef} className="relative">
@@ -947,18 +976,18 @@ export function CalendarDashboard({
           </div>}
         </div>
       </header>
+      {dayColumns.length > 0 && <div className="shrink-0 border-b border-slate-200 bg-white">
+        <table className="w-full table-fixed border-separate border-spacing-0 px-2 text-left">
+          <thead><tr>{dayColumns.map((weekday) => <th className="calendar-day-label py-1 text-center text-xs font-semibold text-slate-700" key={weekday}><span className="calendar-day-long">{weekdayNames[weekday]}</span><span className="calendar-day-short">{weekdayNames[weekday].slice(0, 3)}</span></th>)}</tr></thead>
+        </table>
+      </div>}
       <div
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-white"
         ref={calendarScrollRef}
       >
       {seasons.map((season) => {
         const weeks = weekGroups.get(season.id) ?? [];
         const sessionIds = new Set(season.sessions.map((session) => session.id));
-        const dayColumns = [...new Set(
-          season.games
-            .filter((game) => sessionIds.has(game.sessionId))
-            .map((game) => parseDate(game.gameDate).getUTCDay()),
-        )].sort((left, right) => left - right);
         const finalGame = season.games
           .filter((game) => !game.cancelled)
           .reduce<Game | null>((latest, game) => {
@@ -1018,13 +1047,11 @@ export function CalendarDashboard({
                                     const noGameDate = new Date(parseDate(week.key).getTime() + weekday * 24 * 60 * 60 * 1000);
                                     const noGameKey = noGameDate.toISOString().slice(0, 10);
                                     return (
-                                      <div className="flex h-32 flex-col rounded-lg border border-slate-200 bg-slate-100 p-2 text-slate-500">
-                                        <div className="grid grid-cols-3 items-center gap-1 text-xs font-semibold">
-                                          <span className="text-left">{formatLeagueDate(noGameKey, "UTC", { month: "short", day: "numeric" }).replace(" ", "")}</span>
-                                          <span className="text-center">{formatLeagueDate(noGameKey, "UTC", { weekday: "long" })}</span>
-                                          <span />
-                                        </div>
-                                        <span className="flex flex-1 items-center justify-center text-sm font-bold">No game</span>
+                                      <div className="flex aspect-[1/0.85] min-h-[84px] w-full min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-slate-100 p-2 text-slate-500 [container-type:inline-size]">
+                                        <span className="calendar-card-date-full shrink-0 truncate whitespace-nowrap text-[clamp(11px,11cqi,14px)] font-semibold leading-tight">{formatLeagueDate(noGameKey, "UTC", { month: "short", day: "numeric" })}</span>
+                                        <span className="calendar-card-date-compact shrink-0 whitespace-nowrap text-[clamp(11px,11cqi,14px)] font-semibold leading-tight">{formatCompactCardDate(noGameKey)}</span>
+                                        <span className="flex min-h-0 flex-1 items-center justify-center truncate whitespace-nowrap text-[clamp(11px,10cqi,14px)] font-semibold leading-none">No game</span>
+                                        <span aria-hidden="true" className="min-h-[1.25em] shrink-0" />
                                       </div>
                                     );
                                   })()
@@ -1055,7 +1082,7 @@ export function CalendarDashboard({
       })}
       </div>
 
-      <footer className="flex h-12 shrink-0 items-center border-t border-slate-200 bg-white px-3">
+      <footer className="flex min-h-12 shrink-0 items-center border-t border-slate-200 bg-white px-3" style={{ paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{fullName}</span>
         <button
           className="h-9 border border-slate-300 px-3 disabled:text-slate-400"
@@ -1064,7 +1091,7 @@ export function CalendarDashboard({
             const soonest = [...activePings].sort((left, right) =>
               new Date(left.expiresAt).getTime() - new Date(right.expiresAt).getTime(),
             )[0];
-            if (soonest) scrollAndHighlightGame(soonest.gameId, true);
+            if (soonest) scrollAndHighlightGame(soonest.gameId);
           }}
           type="button"
         >

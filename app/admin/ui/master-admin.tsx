@@ -85,7 +85,6 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
       }))
     : [blankSession()]);
   const [extraText, setExtraText] = useState(initialData?.extraPlayers.map((player) => `${player.name}${player.name ? " <" : ""}${player.email}${player.name ? ">" : ""}`).join("\n") ?? "");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -246,7 +245,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 font-mono text-[13px] text-slate-900">
+    <main className="min-h-screen bg-slate-200 font-mono text-[13px] text-slate-900">
       <div className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-slate-300 bg-white px-4">
         <button className="font-bold" type="button" onClick={() => router.push("/")}>OnlySubs</button>
         <select aria-label="Season" className="h-8 min-w-64 border border-slate-300 bg-white px-2" value={seasonId} onChange={(event) => selectSeason(event.target.value)}>
@@ -296,8 +295,16 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
           <button className="h-9 w-full px-3 text-left" type="button" onClick={() => setSettingsOpen((open) => !open)}>Settings {settingsOpen ? "[-]" : "[+]"}</button>
           {settingsOpen && <div className="border-t border-slate-200 p-3">
             <div className="mb-3 flex items-center gap-3"><label>Rules PDF<input className="ml-2" type="file" accept="application/pdf" onChange={(event) => setRulesPdfFile(event.target.files?.[0] ?? null)} /></label>{initialData?.season.rules_pdf_url && <button className="border border-slate-300 px-2 py-1" type="button" onClick={() => setRemoveRulesPdf(true)}>Remove</button>}<a className="underline" href={initialData?.season.rules_pdf_url ?? undefined} target="_blank">{initialData?.season.rules_pdf_name ?? ""}</a></div>
-            <button className="border border-slate-300 px-2 py-1" type="button" onClick={() => setAdvancedOpen((open) => !open)}>Advanced settings {advancedOpen ? "[-]" : "[+]"}</button>
-            {advancedOpen && <div className="mt-3 grid grid-cols-4 gap-3"><label>Timeout hours<input className="block h-8 w-full border px-2" type="number" min={1} max={168} value={timeoutHours} onChange={(e) => setTimeoutHours(Number(e.target.value))} /></label><label>Day start<input className="block h-8 w-full border px-2" type="number" min={0} max={23} value={dayStart} onChange={(e) => setDayStart(Number(e.target.value))} /></label><label>Day end<input className="block h-8 w-full border px-2" type="number" min={0} max={23} value={dayEnd} onChange={(e) => setDayEnd(Number(e.target.value))} /></label><label>Timezone<input className="block h-8 w-full border px-2" value={timezone} onChange={(e) => setTimezone(e.target.value)} /></label><label>Game price<input className="block h-8 w-full border px-2" value={gamePrice} onChange={(e) => setGamePrice(e.target.value)} /></label><label>Global claim hours<input className="block h-8 w-full border px-2" type="number" value={globalClaim} onChange={(e) => setGlobalClaim(Number(e.target.value))} /></label><label>Gender claim hours<input className="block h-8 w-full border px-2" type="number" value={genderClaim} onChange={(e) => setGenderClaim(Number(e.target.value))} /></label><label>Claims free<select className="block h-8 w-full border px-2" value={claimsFree ? "yes" : "no"} onChange={(e) => setClaimsFree(e.target.value === "yes")}><option value="yes">Yes</option><option value="no">No</option></select></label></div>}
+            <div className="grid grid-cols-4 gap-3 text-slate-900">
+              <label>Timeout hours<input className="block h-8 w-full border border-slate-300 px-2" type="number" min={1} max={168} value={timeoutHours} onChange={(e) => setTimeoutHours(Number(e.target.value))} /></label>
+              <label>Day start<input className="block h-8 w-full border border-slate-300 px-2" type="number" min={0} max={23} value={dayStart} onChange={(e) => setDayStart(Number(e.target.value))} /></label>
+              <label>Day end<input className="block h-8 w-full border border-slate-300 px-2" type="number" min={0} max={23} value={dayEnd} onChange={(e) => setDayEnd(Number(e.target.value))} /></label>
+              <label>Timezone<input className="block h-8 w-full border border-slate-300 px-2" value={timezone} onChange={(e) => setTimezone(e.target.value)} /></label>
+              <label>Game price<input className="block h-8 w-full border border-slate-300 px-2" value={gamePrice} onChange={(e) => setGamePrice(e.target.value)} /></label>
+              <label>Global claim hours<input className="block h-8 w-full border border-slate-300 px-2" type="number" value={globalClaim} onChange={(e) => setGlobalClaim(Number(e.target.value))} /></label>
+              <label>Gender claim hours<input className="block h-8 w-full border border-slate-300 px-2" type="number" value={genderClaim} onChange={(e) => setGenderClaim(Number(e.target.value))} /></label>
+              <label>Claims free<select className="block h-8 w-full border border-slate-300 px-2" value={claimsFree ? "yes" : "no"} onChange={(e) => setClaimsFree(e.target.value === "yes")}><option value="yes">Yes</option><option value="no">No</option></select></label>
+            </div>
             <div className="mt-4 flex gap-2"><button className="border border-slate-400 px-2 py-1" disabled={!seasonId} type="button" onClick={() => setConfirmAction("reset")}>Reset responsiveness score</button><button className="border border-red-500 px-2 py-1 text-red-700" disabled={!seasonId} type="button" onClick={() => setConfirmAction("delete")}>Delete season</button></div>
           </div>}
         </section>
