@@ -17,15 +17,15 @@ type InitialData = {
     claims_are_free: boolean;
   };
   sessions: Array<{
-    id: string; name: string; start_time: string; weekday: number;
+    id: string; schedule_id: string | null; name: string; start_time: string; weekday: number;
     dates: string[]; lockedDates: string[]; players: Array<RosterPlayer & { gender: "MMP" | "FMP" }>;
-    games: Array<{ id: string; game_date: string }>;
+    games: Array<{ id: string; game_date: string; cancelled_at: string | null }>;
   }>;
   extraPlayers: Array<RosterPlayer & { gender: "MMP" | "FMP" }>;
 };
 
 type SessionDraft = {
-  id?: string; weekday: number; startTime: string; dates: string[];
+  id?: string; scheduleId?: string; weekday: number; startTime: string; dates: string[];
   mmpText: string; fmpText: string;
 };
 
@@ -76,6 +76,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
   const [sessions, setSessions] = useState<SessionDraft[]>(initialData
     ? initialData.sessions.map((session) => ({
         id: session.id,
+        scheduleId: session.schedule_id ?? undefined,
         weekday: session.weekday,
         startTime: session.start_time.slice(0, 5),
         dates: session.dates,
@@ -137,7 +138,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
           const draft = sessions.find((session) => session.id === initialSession.id);
           if (!draft) continue;
           for (const game of initialSession.games) {
-            if (!draft.dates.includes(game.game_date)) {
+            if (!draft.dates.includes(game.game_date) && !game.cancelled_at) {
               await fetch(`/api/admin/games/${game.id}/cancel`, {
                 method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cancelled: true }),
               }).then(async (response) => {
@@ -157,7 +158,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
         const first = session.dates.reduce((minimum, date) => date < minimum ? date : minimum, session.dates[0]);
         const last = session.dates.reduce((maximum, date) => date > maximum ? date : maximum, session.dates[0]);
         const autoName = `${weekdays[session.weekday]} ${formatTime(session.startTime)}`;
-        return { id: session.id, name: autoName, start_time: session.startTime, weekday: session.weekday, schedule_name: autoName, first_week: first, last_week: last, dates: session.dates, players: [...mmp, ...fmp] };
+        return { id: session.id, schedule_id: session.scheduleId, name: autoName, start_time: session.startTime, weekday: session.weekday, schedule_name: autoName, first_week: first, last_week: last, dates: [...new Set(session.dates)], players: [...mmp, ...fmp] };
       });
       const extra = parsedPlayers(extraText, "FMP").players;
 
@@ -168,6 +169,26 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not save the season.");
       const savedSeasonId = String(result.season_id ?? seasonId);
+
+      if (initialData && seasonId) {
+        for (const initialSession of initialData.sessions) {
+          const draft = sessions.find((session) => session.id === initialSession.id);
+          if (!draft) continue;
+          for (const game of initialSession.games) {
+            if (draft.dates.includes(game.game_date) && game.cancelled_at) {
+              const uncancelResponse = await fetch(`/api/admin/games/${game.id}/cancel`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ cancelled: false }),
+              });
+              if (!uncancelResponse.ok) {
+                const uncancelResult = await uncancelResponse.json();
+                throw new Error(uncancelResult.error || "Could not restore a selected game date.");
+              }
+            }
+          }
+        }
+      }
 
       if (rulesPdfFile) {
         const supabase = createClient();
@@ -246,7 +267,7 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
         {status && <p className="mb-2 border-l-2 border-emerald-600 px-2 py-1 text-emerald-800">{status}</p>}
 
         {sessions.map((session, sessionIndex) => {
-          const savedDates = initialData?.sessions.find((item) => item.id === session.id)?.dates ?? [];
+          const savedDates = initialData?.sessions.find((item) => item.id === session.id)?.games.map((game) => game.game_date) ?? [];
           const options = dateOptions(session.weekday, savedDates);
           const mmp = parsedPlayers(session.mmpText, "MMP");
           const fmp = parsedPlayers(session.fmpText, "FMP");

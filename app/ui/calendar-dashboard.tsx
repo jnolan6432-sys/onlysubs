@@ -81,7 +81,9 @@ function weekKey(date: Date) {
 function buildWeeks(season: Season): Week[] {
   const weeks = new Map<string, Week>();
   const sessionIds = new Set(season.sessions.map((session) => session.id));
-  const rangedGames = season.games.filter((game) => sessionIds.has(game.sessionId));
+  const rangedGames = season.games.filter(
+    (game) => sessionIds.has(game.sessionId) && !game.cancelled,
+  );
   for (const game of rangedGames) {
     const start = startOfWeek(parseDate(game.gameDate));
     const key = weekKey(start);
@@ -1001,7 +1003,7 @@ export function CalendarDashboard({
                         >
                           {dayColumns.map((weekday) => {
                             const games = (week.gamesByDay.get(weekday) ?? [])
-                              .filter((game) => sessionIds.has(game.sessionId));
+                              .filter((game) => sessionIds.has(game.sessionId) && !game.cancelled);
                             return (
                               <td
                                 className="border-b border-slate-100 p-2 align-top"

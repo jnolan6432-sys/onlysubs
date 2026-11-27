@@ -26,6 +26,7 @@ export default async function AdminPage({
         season: data.season,
         sessions: data.sessions.map((session) => ({
           id: session.id,
+          schedule_id: session.schedule_id,
           name: session.name,
           start_time: session.start_time,
           weekday: session.weekday,

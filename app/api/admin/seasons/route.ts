@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/admin";
 type PlayerInput = { name: string; email: string; gender: "FMP" | "MMP" };
 type SessionInput = {
   id?: string;
+  schedule_id?: string;
   name: string;
   start_time: string;
   weekday?: number;
@@ -129,16 +130,18 @@ function parseBuilderInput(value: unknown): BuilderInput {
     if (!Array.isArray(session.dates) || session.dates.length === 0) {
       throw new Error(`Select at least one date for ${sessionName}.`);
     }
-    const dates = session.dates.map(String);
+    const dates = [...new Set(session.dates.map(String))];
     if (
       dates.some((date) => {
         if (!datePattern.test(date)) return true;
         const parsed = new Date(`${date}T00:00:00.000Z`);
         return Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== date;
-      }) ||
-      new Set(dates).size !== dates.length
+      })
     ) {
-      throw new Error(`${sessionName} has an invalid or duplicate date.`);
+      throw new Error(`${sessionName} has an invalid date.`);
+    }
+    if (session.schedule_id !== undefined && !uuidPattern.test(String(session.schedule_id))) {
+      throw new Error(`Session ${index + 1} has an invalid schedule ID.`);
     }
     if (!Array.isArray(session.players)) {
       throw new Error(`Players for ${sessionName} are invalid.`);
@@ -146,6 +149,7 @@ function parseBuilderInput(value: unknown): BuilderInput {
 
     return {
       ...(session.id ? { id: String(session.id) } : {}),
+      ...(session.schedule_id ? { schedule_id: String(session.schedule_id) } : {}),
       name: sessionName,
       start_time: startTime,
       weekday:
@@ -169,6 +173,15 @@ function parseBuilderInput(value: unknown): BuilderInput {
       ),
     };
   });
+
+  const sessionKeys = new Set<string>();
+  for (const session of sessions) {
+    const key = `${session.name.toLowerCase()}|${session.start_time}`;
+    if (sessionKeys.has(key)) {
+      throw new Error(`Only one session can use ${session.name} at ${session.start_time}.`);
+    }
+    sessionKeys.add(key);
+  }
 
   const extraPlayers = Array.isArray(value.extra_players)
     ? value.extra_players.map((player, index) =>
@@ -320,44 +333,68 @@ export async function POST(request: NextRequest) {
         ? String((data as { season_id: unknown }).season_id)
         : input.season_id;
     if (seasonId) {
-      const schedules = new Map<string, { first: string | null; last: string | null }>();
-      for (const session of input.sessions) {
-        if (session.schedule_name) {
-          schedules.set(session.schedule_name, {
-            first: session.first_week ?? null,
-            last: session.last_week ?? null,
-          });
-        }
+      const { data: savedSessions, error: savedSessionsError } = await serviceClient
+        .from("sessions")
+        .select("id, name, start_time")
+        .eq("season_id", seasonId)
+        .is("archived_at", null);
+      if (savedSessionsError) {
+        throw new Error(`Could not reload saved sessions: ${savedSessionsError.message}`);
       }
-      for (const [scheduleName, range] of schedules) {
-        const { data: schedule, error: scheduleError } = await serviceClient
-          .from("season_schedules")
-          .upsert(
-            {
-              season_id: seasonId,
-              name: scheduleName,
-              first_week: range.first,
-              last_week: range.last,
-            },
-            { onConflict: "season_id,name" },
-          )
-          .select("id")
-          .single();
-        if (scheduleError) {
-          throw new Error(`Could not save season schedule: ${scheduleError.message}`);
+      const sessionIdsByKey = new Map(
+        (savedSessions ?? []).map((session) => [
+          `${session.name.toLowerCase()}|${session.start_time.slice(0, 5)}`,
+          session.id,
+        ]),
+      );
+
+      const updatedScheduleIds = new Set<string>();
+      for (const session of input.sessions) {
+        const sessionId = session.id ?? sessionIdsByKey.get(
+          `${session.name.toLowerCase()}|${session.start_time}`,
+        );
+        if (!sessionId) {
+          throw new Error(`Could not identify the saved session ${session.name}.`);
         }
-        const sessionNames = input.sessions
-          .filter((session) => session.schedule_name === scheduleName)
-          .map((session) => session.name);
-        if (sessionNames.length) {
-          const { error: sessionUpdateError } = await serviceClient
-            .from("sessions")
-            .update({ schedule_id: schedule.id })
-            .eq("season_id", seasonId)
-            .in("name", sessionNames);
-          if (sessionUpdateError) {
-            throw new Error(`Could not link sessions to schedule: ${sessionUpdateError.message}`);
-          }
+        const scheduleValues = {
+          name: session.schedule_name || session.name,
+          first_week: session.first_week ?? null,
+          last_week: session.last_week ?? null,
+        };
+        const updateExistingSchedule = Boolean(
+          session.schedule_id && !updatedScheduleIds.has(session.schedule_id),
+        );
+        if (updateExistingSchedule && session.schedule_id) {
+          updatedScheduleIds.add(session.schedule_id);
+        }
+        const scheduleResult = updateExistingSchedule && session.schedule_id
+          ? await serviceClient
+              .from("season_schedules")
+              .update(scheduleValues)
+              .eq("id", session.schedule_id)
+              .eq("season_id", seasonId)
+              .select("id")
+              .maybeSingle()
+          : await serviceClient
+              .from("season_schedules")
+              .upsert(
+                { season_id: seasonId, ...scheduleValues },
+                { onConflict: "season_id,name" },
+              )
+              .select("id")
+              .single();
+        if (scheduleResult.error || !scheduleResult.data) {
+          throw new Error(
+            `Could not save the schedule for ${session.name}: ${scheduleResult.error?.message ?? "Schedule not found."}`,
+          );
+        }
+        const { error: linkError } = await serviceClient
+          .from("sessions")
+          .update({ schedule_id: scheduleResult.data.id })
+          .eq("id", sessionId)
+          .eq("season_id", seasonId);
+        if (linkError) {
+          throw new Error(`Could not link ${session.name} to its schedule: ${linkError.message}`);
         }
       }
     }

@@ -128,7 +128,9 @@ export async function loadSeasonData(
       return {
         ...session,
         games: sessionGames,
-        dates: sessionGames.map((game) => game.game_date),
+        dates: sessionGames
+          .filter((game) => game.cancelled_at === null)
+          .map((game) => game.game_date),
         weekday: sessionGames[0]
           ? new Date(`${sessionGames[0].game_date}T00:00:00Z`).getUTCDay()
           : 2,
