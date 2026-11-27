@@ -989,7 +989,7 @@ export function CalendarDashboard({
         const weeks = weekGroups.get(season.id) ?? [];
         const sessionIds = new Set(season.sessions.map((session) => session.id));
         const finalGame = season.games
-          .filter((game) => !game.cancelled)
+          .filter((game) => sessionIds.has(game.sessionId) && !game.cancelled)
           .reduce<Game | null>((latest, game) => {
             if (!latest) return game;
             const gameStart = wallClockToDate(

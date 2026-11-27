@@ -25,7 +25,7 @@ type InitialData = {
 };
 
 type SessionDraft = {
-  id?: string; scheduleId?: string; weekday: number; startTime: string; dates: string[];
+  id?: string; scheduleId?: string; weekday: number; weekdayChanged?: boolean; startTime: string; dates: string[];
   mmpText: string; fmpText: string;
 };
 
@@ -39,6 +39,11 @@ function addMonths(date: Date, months: number) {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);
   return result;
+}
+
+function weekdayOfDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 function dateOptions(weekday: number, saved: string[]) {
@@ -266,14 +271,19 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
         {status && <p className="mb-2 border-l-2 border-emerald-600 px-2 py-1 text-emerald-800">{status}</p>}
 
         {sessions.map((session, sessionIndex) => {
-          const savedDates = initialData?.sessions.find((item) => item.id === session.id)?.games.map((game) => game.game_date) ?? [];
+          const savedGames = initialData?.sessions.find((item) => item.id === session.id)?.games ?? [];
+          const savedDates = session.weekdayChanged
+            ? savedGames
+                .filter((game) => !game.cancelled_at && weekdayOfDate(game.game_date) === session.weekday)
+                .map((game) => game.game_date)
+            : savedGames.map((game) => game.game_date);
           const options = dateOptions(session.weekday, savedDates);
           const mmp = parsedPlayers(session.mmpText, "MMP");
           const fmp = parsedPlayers(session.fmpText, "FMP");
           return (
             <section className="mb-2 border border-slate-300 bg-white" key={session.id ?? sessionIndex}>
               <div className="grid grid-cols-[180px_120px_1fr_auto] items-end gap-2 border-b border-slate-200 p-2">
-                <label>Day<select className="mt-1 block h-8 w-full border border-slate-300 px-2" value={session.weekday} onChange={(event) => updateSession(sessionIndex, { weekday: Number(event.target.value) })}>{weekdays.map((day, index) => <option value={index} key={day}>{day}</option>)}</select></label>
+                <label>Day<select className="mt-1 block h-8 w-full border border-slate-300 px-2" value={session.weekday} onChange={(event) => updateSession(sessionIndex, { weekday: Number(event.target.value), weekdayChanged: true, dates: [] })}>{weekdays.map((day, index) => <option value={index} key={day}>{day}</option>)}</select></label>
                 <label>Time<input className="mt-1 block h-8 w-full border border-slate-300 px-2" type="time" value={session.startTime} onChange={(event) => updateSession(sessionIndex, { startTime: event.target.value })} /></label>
                 <details className="relative"><summary className="flex h-8 cursor-pointer list-none items-center border border-slate-300 px-2">Dates ({session.dates.length} selected)</summary><div className="absolute z-10 mt-1 max-h-72 w-80 overflow-auto border border-slate-300 bg-white p-2 shadow-md"><div className="mb-2 flex gap-3"><button type="button" className="underline" onClick={() => updateSession(sessionIndex, { dates: options })}>Select all</button><button type="button" className="underline" onClick={() => updateSession(sessionIndex, { dates: [] })}>Clear</button></div>{options.map((date) => <label className="flex py-1" key={date}><input className="mr-2" type="checkbox" checked={session.dates.includes(date)} onChange={(event) => updateSession(sessionIndex, { dates: event.target.checked ? [...session.dates, date].sort() : session.dates.filter((value) => value !== date) })} /><span>{formatDate(date)}</span></label>)}</div></details>
                 {sessions.length > 1 && <button className="h-8 border border-slate-300 px-2 text-red-700" type="button" onClick={() => setSessions((current) => current.filter((_, index) => index !== sessionIndex))}>Remove</button>}
