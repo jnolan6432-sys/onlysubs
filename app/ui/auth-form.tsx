@@ -15,20 +15,27 @@ export function AuthForm() {
     setMessage("");
     setError("");
 
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
 
-    if (authError) {
-      setError(authError.message);
-    } else {
-      setMessage("Check your inbox for your sign-in link.");
+      if (authError) {
+        console.error("Could not send sign-in email:", authError.message);
+        setError("We couldn't send a sign-in email to that address. Try again or contact your league admin.");
+      } else {
+        setMessage("Check your inbox for your sign-in link.");
+      }
+    } catch (caught) {
+      console.error("Could not send sign-in email:", caught);
+      setError("We couldn't send a sign-in email to that address. Try again or contact your league admin.");
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   return (

@@ -21,6 +21,11 @@ export function TimezoneSync() {
             error: userError,
           } = await supabase.auth.getUser();
           if (userError) {
+            if (userError.name === "AuthSessionMissingError") {
+              profileLoaded = true;
+              userId = null;
+              return;
+            }
             console.error(
               "Could not check the current user for timezone sync:",
               userError.message,
