@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { NotificationsButton } from "./notifications-button";
 import { SignOutButton } from "./sign-out-button";
@@ -157,6 +157,10 @@ function formatCardTime(game: Game) {
   const period = parts.find((part) => part.type === "dayPeriod")?.value;
   if (!hour || !period) return "";
   return `${hour}${minute && minute !== "00" ? `:${minute}` : ""}${period.toLowerCase()}`;
+}
+
+function displayGameStatus(status: Game["status"]) {
+  return status === "unavailable" ? "AWAY" : status.toUpperCase();
 }
 
 function formatCompactCardDate(value: string) {
@@ -468,7 +472,7 @@ export function CalendarDashboard({
       } else if (result.status === "available") {
         setMessage("You are available for this game.");
       } else if (result.status === "unavailable") {
-        setMessage("You are unavailable for this game.");
+        setMessage("You are away for this game.");
       }
       router.refresh();
     } catch (caught) {
@@ -890,7 +894,7 @@ export function CalendarDashboard({
           <span className={`calendar-card-time-full shrink-0 text-right ${activePing ? "pr-2" : ""}`}>{timeLabel}</span>
           <span className={`calendar-card-time-compact shrink-0 text-right ${activePing ? "pr-2" : ""}`}>{timeLabel.replace(/m$/, "")}</span>
         </div>
-        <span className="flex min-h-0 min-w-0 flex-1 items-center justify-center truncate whitespace-nowrap text-center text-[clamp(13px,14cqi,22px)] font-bold uppercase leading-none tracking-tight">{game.status}</span>
+        <span className="flex min-h-0 min-w-0 flex-1 items-center justify-center truncate whitespace-nowrap text-center text-[clamp(13px,14cqi,22px)] font-bold uppercase leading-none tracking-tight">{displayGameStatus(game.status)}</span>
         <span className="flex min-h-[1.25em] min-w-0 shrink-0 items-end justify-center truncate whitespace-nowrap text-center text-[clamp(10px,9.5cqi,13px)] font-medium leading-tight">
           {activePing ? <><span className="calendar-card-ping-full">{bottomText}</span><span className="calendar-card-ping-compact">{compactPingText}</span></> : bottomText}
         </span>
@@ -913,11 +917,11 @@ export function CalendarDashboard({
                 weekday: "long",
                 month: "long",
                 day: "numeric",
-              })}, ${game.status}, ${game.fmpSlotsToFill} FMPs and ${game.mmpSlotsToFill} MMPs needed. ${
+              })}, ${displayGameStatus(game.status)}, ${game.fmpSlotsToFill} FMPs and ${game.mmpSlotsToFill} MMPs needed. ${
                 activePing
                   ? "Active sub ping. Click to respond."
                   : needsClaimAction
-                    ? "Open claim window. Click to claim or set unavailable."
+                    ? "Open claim window. Click to claim or set away."
                     : "Click to change availability."
               }`}
               className={`relative flex aspect-[1/0.85] min-h-[84px] w-full min-w-0 flex-col overflow-hidden rounded-lg border p-2 text-left transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-teal-700 disabled:cursor-not-allowed disabled:opacity-60 ${cardColors[game.status][startsAt > now ? "future" : "past"]} ${attentionPulseClass} ${highlightedGameId === game.id ? "ring-4 ring-yellow-400" : ""}`}
@@ -977,9 +981,11 @@ export function CalendarDashboard({
         </div>
       </header>
       {dayColumns.length > 0 && <div className="shrink-0 border-b border-slate-200 bg-white">
+        <div className="calendar-grid-content" style={{ "--calendar-max-width": `${Math.max(dayColumns.length, 1) * 170}px` } as CSSProperties}>
         <table className="w-full table-fixed border-separate border-spacing-0 px-2 text-left">
           <thead><tr>{dayColumns.map((weekday) => <th className="calendar-day-label py-1 text-center text-xs font-semibold text-slate-700" key={weekday}><span className="calendar-day-long">{weekdayNames[weekday]}</span><span className="calendar-day-short">{weekdayNames[weekday].slice(0, 3)}</span></th>)}</tr></thead>
         </table>
+        </div>
       </div>}
       <div
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain bg-white"
@@ -1015,6 +1021,7 @@ export function CalendarDashboard({
           : null;
         return (
           <section key={season.id}>
+            <div className="calendar-grid-content" style={{ "--calendar-max-width": `${Math.max(dayColumns.length, 1) * 170}px` } as CSSProperties}>
             {weeks.length === 0 ? (
               <p className="m-4 rounded-lg bg-slate-50 p-5 text-slate-600">
                 No game dates have been added yet.
@@ -1077,6 +1084,7 @@ export function CalendarDashboard({
                   </tbody>
                 </table>
             )}
+            </div>
           </section>
         );
       })}
@@ -1163,7 +1171,7 @@ export function CalendarDashboard({
               Request a substitute?
             </h2>
             <p className="mt-3 leading-6 text-slate-700">
-              Mark yourself unavailable for{" "}
+              Mark yourself away for{" "}
               {formatLeagueDate(confirmGame.game.gameDate, confirmGame.game.timezone, {
                 weekday: "long",
                 month: "long",
@@ -1238,7 +1246,7 @@ export function CalendarDashboard({
                 }}
                 type="button"
               >
-                Set Unavailable
+                Set Away
               </button>
               <button
                 className="rounded-lg bg-amber-600 px-4 py-2.5 font-semibold text-white hover:bg-amber-700 disabled:opacity-60"

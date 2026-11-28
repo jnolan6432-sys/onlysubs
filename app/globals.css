@@ -30,6 +30,17 @@ input {
   container-type: inline-size;
 }
 
+.calendar-grid-content {
+  width: 100%;
+  margin-inline: auto;
+}
+
+@media (min-width: 768px) {
+  .calendar-grid-content {
+    max-width: var(--calendar-max-width);
+  }
+}
+
 .calendar-day-short {
   display: none;
 }

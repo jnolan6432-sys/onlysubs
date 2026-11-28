@@ -213,7 +213,13 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
         setRemoveRulesPdf(false);
       }
 
-      setStatus("Saved");
+      const rosterWarnings = Array.isArray(result.roster_warnings)
+        ? result.roster_warnings as Array<{ player_name?: string; game_date?: string }>
+        : [];
+      const warningSummary = rosterWarnings.length
+        ? ` Kept filled sub or ledger entries for ${rosterWarnings.slice(0, 3).map((warning) => `${warning.player_name ?? "a player"} on ${warning.game_date ? formatDate(warning.game_date) : "an upcoming game"}`).join(", ")}${rosterWarnings.length > 3 ? `, and ${rosterWarnings.length - 3} more` : ""}.`
+        : "";
+      setStatus(`Saved.${warningSummary}`);
       router.push(`/admin?season=${encodeURIComponent(savedSeasonId)}`);
       router.refresh();
     } catch (caught) {
@@ -250,7 +256,12 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
   }
 
   return (
-    <main className="min-h-screen bg-slate-200 font-mono text-[13px] text-slate-900">
+    <>
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-3 px-6 text-center font-mono text-slate-900 md:hidden">
+        <p>This page is for desktop use only.</p>
+        <Link className="underline" href="/">Back to calendar</Link>
+      </div>
+    <main className="hidden min-h-screen bg-slate-200 font-mono text-[13px] text-slate-900 md:block">
       <div className="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-slate-300 bg-white px-4">
         <button className="font-bold" type="button" onClick={() => router.push("/")}>OnlySubs</button>
         <select aria-label="Season" className="h-8 min-w-64 border border-slate-300 bg-white px-2" value={seasonId} onChange={(event) => selectSeason(event.target.value)}>
@@ -321,5 +332,6 @@ export function MasterAdmin({ seasons, initialData }: { seasons: SeasonSummary[]
       </div>
       {confirmAction && <div aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog"><div className="w-full max-w-md border border-slate-400 bg-white p-4"><h2 className="font-bold">{confirmAction === "delete" ? "Delete season?" : "Reset responsiveness score?"}</h2><p className="mt-2 text-sm">{confirmAction === "delete" ? "This permanently removes the season and associated data." : "This resets all player ping scores in this season."}</p><div className="mt-4 flex justify-end gap-2"><button className="border border-slate-300 px-3 py-1" type="button" onClick={() => setConfirmAction(null)}>Cancel</button><button className="border border-red-600 px-3 py-1 text-red-700" type="button" onClick={() => { setConfirmAction(null); if (confirmAction === "delete") void deleteSeason(); else void resetStats(); }}>Confirm</button></div></div></div>}
     </main>
+    </>
   );
 }

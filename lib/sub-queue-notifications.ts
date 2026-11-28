@@ -27,6 +27,25 @@ type Delivery = {
   error?: string;
 };
 
+const pingWeekdays = ["Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat"];
+const pingMonths = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function formatPingDate(gameDate: string | undefined) {
+  if (!gameDate) return null;
+  const [year, month, day] = gameDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(date.valueOf()) ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) return null;
+  return `${pingWeekdays[date.getUTCDay()]} ${pingMonths[month - 1]} ${day}`;
+}
+
 async function sendPush(
   serviceClient: SupabaseClient,
   userId: string,
@@ -159,11 +178,11 @@ export async function dispatchSubQueueEvents(
           request?.current_pinged_user_id === recipient &&
           ["searching_primary", "searching_fallback"].includes(request.status)
         ) {
+          const pingDate = formatPingDate(event.game_date);
+          if (!pingDate) throw new Error("Cannot format a sub ping without a valid game date.");
           const push = await sendPush(serviceClient, recipient, {
             title: "Sub request",
-            body: `${event.season_name ?? "A game"} needs a sub for ${
-              event.game_date ?? "an upcoming date"
-            } at ${event.start_time?.slice(0, 5) ?? "the scheduled time"}.`,
+            body: `Sub in for ${pingDate}?`,
             url: event.game_id ? `/?game=${event.game_id}` : "/",
             requestId: event.request_id,
             actions: [

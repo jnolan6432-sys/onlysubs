@@ -321,6 +321,26 @@ export async function POST(request: NextRequest) {
       })),
     };
 
+    const previousRosterBySession = new Map<string, string[]>();
+    const existingSessionIds = input.sessions.flatMap((session) =>
+      session.id ? [session.id] : [],
+    );
+    if (existingSessionIds.length) {
+      const { data: previousRoster, error: previousRosterError } = await context.supabase
+        .from("session_rosters")
+        .select("session_id, user_id")
+        .in("session_id", existingSessionIds);
+      if (previousRosterError) {
+        throw new Error(`Could not snapshot existing session rosters: ${previousRosterError.message}`);
+      }
+      for (const row of previousRoster ?? []) {
+        previousRosterBySession.set(row.session_id, [
+          ...(previousRosterBySession.get(row.session_id) ?? []),
+          row.user_id,
+        ]);
+      }
+    }
+
     const { data, error } = await context.supabase.rpc("publish_season_with_timezone", {
       p_payload: payload,
       p_timezone_name: input.timezone,
@@ -332,6 +352,7 @@ export async function POST(request: NextRequest) {
       typeof data === "object" && data !== null && "season_id" in data
         ? String((data as { season_id: unknown }).season_id)
         : input.season_id;
+    let formattedWarnings: Array<{ player_name: string; game_date: string }> = [];
     if (seasonId) {
       const { data: savedSessions, error: savedSessionsError } = await serviceClient
         .from("sessions")
@@ -349,6 +370,7 @@ export async function POST(request: NextRequest) {
       );
 
       const updatedScheduleIds = new Set<string>();
+      const rosterWarnings: Array<{ player_id: string; game_date: string }> = [];
       for (const session of input.sessions) {
         const sessionId = session.id ?? sessionIdsByKey.get(
           `${session.name.toLowerCase()}|${session.start_time}`,
@@ -396,7 +418,47 @@ export async function POST(request: NextRequest) {
         if (linkError) {
           throw new Error(`Could not link ${session.name} to its schedule: ${linkError.message}`);
         }
+
+        const { data: syncWarnings, error: rosterSyncError } = await context.supabase.rpc(
+          "sync_admin_session_game_roster",
+          {
+            p_session_id: sessionId,
+            p_previous_user_ids: previousRosterBySession.get(sessionId) ?? [],
+          },
+        );
+        if (rosterSyncError) {
+          throw new Error(`Could not sync games for ${session.name}: ${rosterSyncError.message}`);
+        }
+        if (Array.isArray(syncWarnings)) {
+          for (const warning of syncWarnings) {
+            if (
+              typeof warning === "object" && warning !== null &&
+              "player_id" in warning && "game_date" in warning &&
+              typeof warning.player_id === "string" && typeof warning.game_date === "string"
+            ) {
+              rosterWarnings.push({ player_id: warning.player_id, game_date: warning.game_date });
+            }
+          }
+        }
       }
+
+      const warningPlayerIds = [...new Set(rosterWarnings.map((warning) => warning.player_id))];
+      const warningProfiles = warningPlayerIds.length
+        ? (await serviceClient
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", warningPlayerIds)).data ?? []
+        : [];
+      const warningNames = new Map(
+        warningProfiles.map((profile) => [
+          profile.id,
+          profile.full_name || profile.email || "A player",
+        ]),
+      );
+      formattedWarnings = rosterWarnings.map((warning) => ({
+        player_name: warningNames.get(warning.player_id) ?? "A player",
+        game_date: warning.game_date,
+      }));
     }
     for (const [email, player] of people) {
       const userId = idsByEmail.get(email);
@@ -414,7 +476,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(data);
+    const responseData =
+      typeof data === "object" && data !== null && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : { result: data };
+    return NextResponse.json({ ...responseData, roster_warnings: formattedWarnings });
   } catch (error) {
     return errorResponse(error);
   }
